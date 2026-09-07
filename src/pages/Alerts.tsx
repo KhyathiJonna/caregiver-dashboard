@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Clock,
@@ -7,8 +8,17 @@ import {
   Activity,
 } from "lucide-react";
 
+type BackendAlert = {
+  id: string;
+  patientId: string;
+  type: string;
+  severity: "high" | "medium" | "low";
+  message: string;
+  resolved: boolean;
+};
+
 type Alert = {
-  id: number;
+  id: string;
   patient: string;
   type: string;
   message: string;
@@ -18,48 +28,58 @@ type Alert = {
 };
 
 function Alerts() {
-  const alerts: Alert[] = [
-    {
-      id: 1,
-      patient: "Patient #1018",
-      type: "Performance Decline",
-      message:
-        "Cognitive game performance has decreased by 22% compared with the previous week.",
-      time: "Today, 9:15 AM",
-      severity: "high",
-      icon: "decline",
-    },
-    {
-      id: 2,
-      patient: "Patient #1009",
-      type: "Inactivity Detected",
-      message:
-        "No cognitive game activity has been recorded for the last 3 days.",
-      time: "Yesterday, 6:30 PM",
-      severity: "medium",
-      icon: "inactive",
-    },
-    {
-      id: 3,
-      patient: "Patient #1024",
-      type: "Missed Reminder",
-      message:
-        "The patient did not complete the scheduled medication reminder.",
-      time: "Yesterday, 2:00 PM",
-      severity: "medium",
-      icon: "reminder",
-    },
-    {
-      id: 4,
-      patient: "Patient #1007",
-      type: "Positive Activity",
-      message:
-        "Patient completed all scheduled cognitive activities today.",
-      time: "Today, 10:00 AM",
-      severity: "low",
-      icon: "normal",
-    },
-  ];
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/alerts")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch alerts");
+        }
+
+        return response.json();
+      })
+      .then((data: BackendAlert[]) => {
+        const formattedAlerts: Alert[] = data.map((alert) => {
+          let icon: Alert["icon"] = "normal";
+
+          if (alert.type === "performance") {
+            icon = "decline";
+          } else if (alert.type === "inactivity") {
+            icon = "inactive";
+          } else if (alert.type === "reminder") {
+            icon = "reminder";
+          }
+
+          return {
+            id: alert.id,
+            patient: `Patient #${alert.patientId}`,
+            type:
+              alert.type === "performance"
+                ? "Performance Decline"
+                : alert.type === "inactivity"
+                ? "Inactivity Detected"
+                : alert.type === "reminder"
+                ? "Missed Reminder"
+                : "Positive Activity",
+            message: alert.message,
+            time: "Recent",
+            severity: alert.severity,
+            icon,
+          };
+        });
+
+        setAlerts(formattedAlerts);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError("Unable to connect to the backend.");
+        setLoading(false);
+      });
+  }, []);
 
   const getIcon = (type: Alert["icon"]) => {
     if (type === "decline") {
@@ -109,6 +129,10 @@ function Alerts() {
     (alert) => alert.severity === "medium"
   ).length;
 
+  const activeAlerts = alerts.filter(
+    (alert) => alert.severity !== "low"
+  ).length;
+
   const resolvedAlerts = 6;
 
   return (
@@ -124,6 +148,20 @@ function Alerts() {
           performance.
         </p>
       </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
+          Loading alerts from backend...
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -182,7 +220,7 @@ function Alerts() {
           </div>
 
           <p className="mt-3 text-2xl font-bold text-slate-900">
-            {alerts.length}
+            {activeAlerts}
           </p>
 
           <p className="mt-1 text-xs text-slate-500">
