@@ -1,353 +1,450 @@
 import { useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  Clock,
-  Pill,
-  CheckCircle,
-  TrendingDown,
-  Activity,
-} from "lucide-react";
 
-type BackendAlert = {
-  id: string;
-  patientId: string;
-  type: string;
-  severity: "high" | "medium" | "low";
-  message: string;
-  resolved: boolean;
-};
+const API_URL =
+  "https://caregiver-dashboard-phyh.onrender.com";
 
 type Alert = {
   id: string;
-  patient: string;
+  patientId: string;
   type: string;
+  severity: "low" | "medium" | "high";
   message: string;
-  time: string;
-  severity: "high" | "medium" | "low";
-  icon: "decline" | "inactive" | "reminder" | "normal";
+  createdAt: string;
+  resolved: boolean;
 };
 
-function Alerts() {
+type Patient = {
+  id: string;
+  name: string;
+};
+
+export default function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const fetchAlerts = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const alertsResponse = await fetch(
+        `${API_URL}/api/alerts`
+      );
+
+      if (!alertsResponse.ok) {
+        throw new Error(
+          `Alerts API failed with status ${alertsResponse.status}`
+        );
+      }
+
+      const alertData: Alert[] =
+        await alertsResponse.json();
+
+      const patientsResponse = await fetch(
+        `${API_URL}/api/patients`
+      );
+
+      if (!patientsResponse.ok) {
+        throw new Error(
+          `Patients API failed with status ${patientsResponse.status}`
+        );
+      }
+
+      const patientData: Patient[] =
+        await patientsResponse.json();
+
+      setAlerts(alertData);
+      setPatients(patientData);
+    } catch (err) {
+      console.error(
+        "Alerts backend error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to connect to the backend."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch("http://localhost:5000/api/alerts")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch alerts");
-        }
+    fetchAlerts();
 
-        return response.json();
-      })
-      .then((data: BackendAlert[]) => {
-        const formattedAlerts: Alert[] = data.map((alert) => {
-          let icon: Alert["icon"] = "normal";
+    const interval = setInterval(
+      fetchAlerts,
+      10000
+    );
 
-          if (alert.type === "performance") {
-            icon = "decline";
-          } else if (alert.type === "inactivity") {
-            icon = "inactive";
-          } else if (alert.type === "reminder") {
-            icon = "reminder";
-          }
-
-          return {
-            id: alert.id,
-            patient: `Patient #${alert.patientId}`,
-            type:
-              alert.type === "performance"
-                ? "Performance Decline"
-                : alert.type === "inactivity"
-                ? "Inactivity Detected"
-                : alert.type === "reminder"
-                ? "Missed Reminder"
-                : "Positive Activity",
-            message: alert.message,
-            time: "Recent",
-            severity: alert.severity,
-            icon,
-          };
-        });
-
-        setAlerts(formattedAlerts);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError("Unable to connect to the backend.");
-        setLoading(false);
-      });
+    return () =>
+      clearInterval(interval);
   }, []);
 
-  const getIcon = (type: Alert["icon"]) => {
-    if (type === "decline") {
-      return <TrendingDown size={22} />;
-    }
+  const getPatientName = (
+    patientId: string
+  ) => {
+    const patient = patients.find(
+      (p) => p.id === patientId
+    );
 
-    if (type === "inactive") {
-      return <Clock size={22} />;
-    }
-
-    if (type === "reminder") {
-      return <Pill size={22} />;
-    }
-
-    return <CheckCircle size={22} />;
+    return patient
+      ? patient.name
+      : `Patient ${patientId}`;
   };
 
-  const getStyles = (severity: Alert["severity"]) => {
-    if (severity === "high") {
-      return {
-        box: "border-red-200 bg-red-50",
-        icon: "bg-red-100 text-red-600",
-        badge: "bg-red-100 text-red-700",
-      };
-    }
+  const getAlertTitle = (
+    type: string
+  ) => {
+    switch (type) {
+      case "performance":
+        return "Performance Decline";
 
-    if (severity === "medium") {
-      return {
-        box: "border-yellow-200 bg-yellow-50",
-        icon: "bg-yellow-100 text-yellow-600",
-        badge: "bg-yellow-100 text-yellow-700",
-      };
-    }
+      case "inactivity":
+        return "Inactivity Alert";
 
-    return {
-      box: "border-green-200 bg-green-50",
-      icon: "bg-green-100 text-green-600",
-      badge: "bg-green-100 text-green-700",
-    };
+      case "reminder":
+        return "Missed Reminder";
+
+      default:
+        return "Patient Alert";
+    }
   };
 
-  const highAlerts = alerts.filter(
-    (alert) => alert.severity === "high"
-  ).length;
+  const getAlertIcon = (
+    type: string
+  ) => {
+    switch (type) {
+      case "performance":
+        return "📉";
 
-  const mediumAlerts = alerts.filter(
-    (alert) => alert.severity === "medium"
-  ).length;
+      case "inactivity":
+        return "⏰";
+
+      case "reminder":
+        return "💊";
+
+      default:
+        return "⚠️";
+    }
+  };
+
+  const getSeverityStyle = (
+    severity: Alert["severity"]
+  ) => {
+    switch (severity) {
+      case "high":
+        return {
+          badge:
+            "bg-red-100 text-red-700 border-red-200",
+          icon:
+            "bg-red-100 text-red-600 border-red-200",
+        };
+
+      case "medium":
+        return {
+          badge:
+            "bg-yellow-100 text-yellow-700 border-yellow-200",
+          icon:
+            "bg-yellow-100 text-yellow-600 border-yellow-200",
+        };
+
+      default:
+        return {
+          badge:
+            "bg-blue-100 text-blue-700 border-blue-200",
+          icon:
+            "bg-blue-100 text-blue-600 border-blue-200",
+        };
+    }
+  };
+
+  const formatDate = (
+    dateString: string
+  ) => {
+    const date = new Date(dateString);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+
+    return date.toLocaleString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const activeAlerts = alerts.filter(
-    (alert) => alert.severity !== "low"
-  ).length;
+    (alert) => !alert.resolved
+  );
 
-  const resolvedAlerts = 6;
+  const highAlerts = activeAlerts.filter(
+    (alert) =>
+      alert.severity === "high"
+  );
+
+  const mediumAlerts = activeAlerts.filter(
+    (alert) =>
+      alert.severity === "medium"
+  );
+
+  const resolvedAlerts = alerts.filter(
+    (alert) => alert.resolved
+  );
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="rounded-2xl border bg-white p-10 text-center shadow-sm">
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+
+          <p className="text-sm text-gray-600">
+            Loading alerts...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-xl">
+              ⚠️
+            </div>
+
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-red-800">
+                Backend Connection Error
+              </h2>
+
+              <p className="mt-2 text-sm text-red-700">
+                {error}
+              </p>
+
+              <p className="mt-4 text-xs text-gray-600">
+                Backend server:
+              </p>
+
+              <p className="mt-1 break-all text-sm font-medium text-gray-800">
+                {API_URL}
+              </p>
+
+              <button
+                onClick={fetchAlerts}
+                className="mt-5 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">
-          Alerts & Notifications
-        </h2>
 
-        <p className="mt-1 text-sm text-slate-500">
-          Monitor important changes in patient activity and
-          performance.
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Alerts & Notifications
+        </h1>
+
+        <p className="mt-1 text-sm text-gray-500">
+          Monitor important changes in patient
+          activity and performance.
         </p>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
-          Loading alerts from backend...
-        </div>
-      )}
+      {/* Summary */}
 
-      {/* Error */}
-      {error && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* High Priority */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              High Priority
-            </p>
-
-            <div className="rounded-lg bg-red-50 p-2 text-red-600">
-              <AlertTriangle size={22} />
-            </div>
-          </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {highAlerts}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            High Priority
           </p>
 
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-2 text-3xl font-bold text-red-600">
+            {highAlerts.length}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
             Requires immediate attention
           </p>
         </div>
 
-        {/* Medium Priority */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Medium Priority
-            </p>
-
-            <div className="rounded-lg bg-yellow-50 p-2 text-yellow-600">
-              <Clock size={22} />
-            </div>
-          </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {mediumAlerts}
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Medium Priority
           </p>
 
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-2 text-3xl font-bold text-yellow-600">
+            {mediumAlerts.length}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
             Should be reviewed
           </p>
         </div>
 
-        {/* Active Alerts */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Active Alerts
-            </p>
-
-            <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
-              <Activity size={22} />
-            </div>
-          </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {activeAlerts}
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Active Alerts
           </p>
 
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-2 text-3xl font-bold text-orange-600">
+            {activeAlerts.length}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
             Currently requiring monitoring
           </p>
         </div>
 
-        {/* Resolved */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Resolved
-            </p>
-
-            <div className="rounded-lg bg-green-50 p-2 text-green-600">
-              <CheckCircle size={22} />
-            </div>
-          </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {resolvedAlerts}
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            Resolved
           </p>
 
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-2 text-3xl font-bold text-green-600">
+            {resolvedAlerts.length}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
             Alerts handled previously
           </p>
         </div>
       </div>
 
-      {/* Alert List */}
-      <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-900">
-            Recent Alerts
-          </h3>
+      {/* Recent Alerts */}
 
-          <p className="mt-1 text-sm text-slate-500">
-            Important observations from patient activity.
-          </p>
+      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Alerts
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Important observations from patient
+              activity.
+            </p>
+          </div>
+
+          <button
+            onClick={fetchAlerts}
+            className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Refresh
+          </button>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {alerts.map((alert) => {
-            const styles = getStyles(alert.severity);
+        {alerts.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-2xl">
+              ✓
+            </div>
 
-            return (
-              <div
-                key={alert.id}
-                className={`m-4 flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-start ${styles.box}`}
-              >
-                {/* Icon */}
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">
+              No alerts
+            </h3>
+
+            <p className="mt-1 text-sm text-gray-500">
+              There are no alerts requiring attention.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {alerts.map((alert) => {
+              const styles =
+                getSeverityStyle(
+                  alert.severity
+                );
+
+              return (
                 <div
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${styles.icon}`}
+                  key={alert.id}
+                  className="px-6 py-5 hover:bg-gray-50"
                 >
-                  {getIcon(alert.icon)}
-                </div>
+                  <div className="flex gap-4">
+                    <div
+                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-xl ${styles.icon}`}
+                    >
+                      {getAlertIcon(
+                        alert.type
+                      )}
+                    </div>
 
-                {/* Content */}
-                <div className="flex-1">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        {alert.type}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-gray-900">
+                          {getAlertTitle(
+                            alert.type
+                          )}
+                        </h3>
+
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${styles.badge}`}
+                        >
+                          {alert.severity}
+                        </span>
+
+                        {alert.resolved && (
+                          <span className="rounded-full border border-green-200 bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                            Resolved
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-2 text-sm font-medium text-gray-700">
+                        Patient:{" "}
+                        {getPatientName(
+                          alert.patientId
+                        )}
                       </p>
 
-                      <p className="mt-1 text-sm font-medium text-slate-700">
-                        {alert.patient}
+                      <p className="mt-2 text-sm leading-6 text-gray-600">
+                        {alert.message}
+                      </p>
+
+                      <p className="mt-3 text-xs text-gray-400">
+                        {formatDate(
+                          alert.createdAt
+                        )}
                       </p>
                     </div>
 
-                    <span
-                      className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${styles.badge}`}
-                    >
-                      {alert.severity === "high"
-                        ? "High"
-                        : alert.severity === "medium"
-                        ? "Medium"
-                        : "Normal"}
-                    </span>
+                    <div className="hidden shrink-0 sm:block">
+                      <span
+                        className={
+                          alert.resolved
+                            ? "text-sm font-medium text-green-600"
+                            : "text-sm font-medium text-red-600"
+                        }
+                      >
+                        {alert.resolved
+                          ? "✓ Resolved"
+                          : "Needs attention"}
+                      </span>
+                    </div>
                   </div>
-
-                  <p className="mt-3 text-sm text-slate-600">
-                    {alert.message}
-                  </p>
-
-                  <p className="mt-3 text-xs text-slate-400">
-                    {alert.time}
-                  </p>
                 </div>
-
-                {/* Action */}
-                {alert.severity !== "low" && (
-                  <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                    Review
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Information Box */}
-      <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-5">
-        <div className="flex gap-3">
-          <div className="mt-0.5 text-blue-600">
-            <AlertTriangle size={20} />
+              );
+            })}
           </div>
-
-          <div>
-            <h3 className="font-semibold text-blue-900">
-              How alerts work
-            </h3>
-
-            <p className="mt-1 text-sm leading-6 text-blue-800">
-              Alerts are generated from observed activity
-              patterns such as prolonged inactivity, missed
-              reminders, or significant changes in cognitive
-              game performance. These alerts are intended to
-              support caregiver monitoring and are not a medical
-              diagnosis.
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
-
-export default Alerts;
