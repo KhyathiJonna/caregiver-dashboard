@@ -31,7 +31,7 @@ import ActivityPage from "./pages/Activity";
 import Alerts from "./pages/Alerts";
 import SettingsPage from "./pages/Settings";
 
-const API_URL = "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL;
 
 type Patient = {
   id: string;
@@ -875,7 +875,7 @@ function Dashboard({
 
               <p className="mt-3 text-xs text-red-500">
                 Backend should be running at:
-                http://localhost:5000
+                {API_URL}
               </p>
             </div>
           </div>
