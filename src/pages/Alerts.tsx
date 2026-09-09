@@ -23,10 +23,15 @@ export default function Alerts() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [resolvingId, setResolvingId] =
+    useState<string | null>(null);
+
+  // =========================================================
+  // LOAD ALERTS
+  // =========================================================
 
   const fetchAlerts = async () => {
     try {
-      setLoading(true);
       setError("");
 
       const alertsResponse = await fetch(
@@ -73,6 +78,10 @@ export default function Alerts() {
     }
   };
 
+  // =========================================================
+  // INITIAL LOAD + AUTO REFRESH
+  // =========================================================
+
   useEffect(() => {
     fetchAlerts();
 
@@ -81,21 +90,97 @@ export default function Alerts() {
       10000
     );
 
-    return () =>
+    return () => {
       clearInterval(interval);
+    };
   }, []);
+
+  // =========================================================
+  // RESOLVE ALERT
+  // =========================================================
+
+  const resolveAlert = async (
+    alertId: string
+  ) => {
+    try {
+      setResolvingId(alertId);
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/api/alerts/${encodeURIComponent(
+          alertId
+        )}/resolve`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        let message =
+          `Failed to resolve alert (${response.status})`;
+
+        try {
+          const data = await response.json();
+
+          if (data?.message) {
+            message = data.message;
+          }
+        } catch {
+          // Keep default error message
+        }
+
+        throw new Error(message);
+      }
+
+      // Immediately update local screen
+      setAlerts((currentAlerts) =>
+        currentAlerts.map((alert) =>
+          alert.id === alertId
+            ? {
+                ...alert,
+                resolved: true,
+              }
+            : alert
+        )
+      );
+    } catch (err) {
+      console.error(
+        "Resolve alert error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to resolve the alert."
+      );
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
+  // =========================================================
+  // GET PATIENT NAME
+  // =========================================================
 
   const getPatientName = (
     patientId: string
   ) => {
     const patient = patients.find(
-      (p) => p.id === patientId
+      (item) => item.id === patientId
     );
 
     return patient
       ? patient.name
       : `Patient ${patientId}`;
   };
+
+  // =========================================================
+  // ALERT TITLE
+  // =========================================================
 
   const getAlertTitle = (
     type: string
@@ -115,6 +200,10 @@ export default function Alerts() {
     }
   };
 
+  // =========================================================
+  // ALERT ICON
+  // =========================================================
+
   const getAlertIcon = (
     type: string
   ) => {
@@ -133,35 +222,49 @@ export default function Alerts() {
     }
   };
 
+  // =========================================================
+  // SEVERITY STYLE
+  // =========================================================
+
   const getSeverityStyle = (
     severity: Alert["severity"]
   ) => {
     switch (severity) {
       case "high":
         return {
-          badge:
-            "bg-red-100 text-red-700 border-red-200",
+          container:
+            "border-red-200 bg-red-50",
           icon:
-            "bg-red-100 text-red-600 border-red-200",
+            "border-red-200 bg-red-100",
+          badge:
+            "border-red-200 bg-red-100 text-red-700",
         };
 
       case "medium":
         return {
-          badge:
-            "bg-yellow-100 text-yellow-700 border-yellow-200",
+          container:
+            "border-yellow-200 bg-yellow-50",
           icon:
-            "bg-yellow-100 text-yellow-600 border-yellow-200",
+            "border-yellow-200 bg-yellow-100",
+          badge:
+            "border-yellow-200 bg-yellow-100 text-yellow-700",
         };
 
       default:
         return {
-          badge:
-            "bg-blue-100 text-blue-700 border-blue-200",
+          container:
+            "border-blue-200 bg-blue-50",
           icon:
-            "bg-blue-100 text-blue-600 border-blue-200",
+            "border-blue-200 bg-blue-100",
+          badge:
+            "border-blue-200 bg-blue-100 text-blue-700",
         };
     }
   };
+
+  // =========================================================
+  // DATE FORMAT
+  // =========================================================
 
   const formatDate = (
     dateString: string
@@ -172,7 +275,7 @@ export default function Alerts() {
       return dateString;
     }
 
-    return date.toLocaleString([], {
+    return date.toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -180,6 +283,10 @@ export default function Alerts() {
       minute: "2-digit",
     });
   };
+
+  // =========================================================
+  // COUNTS
+  // =========================================================
 
   const activeAlerts = alerts.filter(
     (alert) => !alert.resolved
@@ -199,30 +306,46 @@ export default function Alerts() {
     (alert) => alert.resolved
   );
 
+  // =========================================================
+  // LOADING
+  // =========================================================
+
   if (loading) {
     return (
       <div className="p-6">
-        <div className="rounded-2xl border bg-white p-10 text-center shadow-sm">
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+        <div className="flex min-h-[500px] items-center justify-center">
+          <div className="text-center">
 
-          <p className="text-sm text-gray-600">
-            Loading alerts...
-          </p>
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+
+            <p className="mt-4 text-sm text-slate-500">
+              Loading alerts...
+            </p>
+
+          </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  // =========================================================
+  // CONNECTION ERROR
+  // =========================================================
+
+  if (error && alerts.length === 0) {
     return (
       <div className="p-6">
+
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
+
           <div className="flex items-start gap-4">
+
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-xl">
               ⚠️
             </div>
 
             <div className="flex-1">
+
               <h2 className="text-lg font-semibold text-red-800">
                 Backend Connection Error
               </h2>
@@ -231,11 +354,11 @@ export default function Alerts() {
                 {error}
               </p>
 
-              <p className="mt-4 text-xs text-gray-600">
+              <p className="mt-4 text-xs text-slate-500">
                 Backend server:
               </p>
 
-              <p className="mt-1 break-all text-sm font-medium text-gray-800">
+              <p className="mt-1 break-all text-sm font-medium text-slate-800">
                 {API_URL}
               </p>
 
@@ -245,33 +368,56 @@ export default function Alerts() {
               >
                 Try Again
               </button>
+
             </div>
+
           </div>
+
         </div>
+
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
+  // =========================================================
+  // MAIN PAGE
+  // =========================================================
 
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
+
+      {/* HEADER */}
+
+      <div className="mb-6">
+
+        <h1 className="text-2xl font-bold text-slate-900">
           Alerts & Notifications
         </h1>
 
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-slate-500">
           Monitor important changes in patient
           activity and performance.
         </p>
+
       </div>
 
-      {/* Summary */}
+      {/* ERROR BANNER */}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* SUMMARY CARDS */}
+
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+
+        {/* HIGH PRIORITY */}
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+          <p className="text-sm text-slate-500">
             High Priority
           </p>
 
@@ -279,13 +425,17 @@ export default function Alerts() {
             {highAlerts.length}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-slate-500">
             Requires immediate attention
           </p>
+
         </div>
 
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">
+        {/* MEDIUM PRIORITY */}
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+          <p className="text-sm text-slate-500">
             Medium Priority
           </p>
 
@@ -293,13 +443,17 @@ export default function Alerts() {
             {mediumAlerts.length}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-slate-500">
             Should be reviewed
           </p>
+
         </div>
 
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">
+        {/* ACTIVE ALERTS */}
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+          <p className="text-sm text-slate-500">
             Active Alerts
           </p>
 
@@ -307,13 +461,17 @@ export default function Alerts() {
             {activeAlerts.length}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-slate-500">
             Currently requiring monitoring
           </p>
+
         </div>
 
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">
+        {/* RESOLVED */}
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+          <p className="text-sm text-slate-500">
             Resolved
           </p>
 
@@ -321,52 +479,66 @@ export default function Alerts() {
             {resolvedAlerts.length}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-slate-500">
             Alerts handled previously
           </p>
+
         </div>
+
       </div>
 
-      {/* Recent Alerts */}
+      {/* RECENT ALERTS */}
 
-      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b px-6 py-5">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
+
+            <h2 className="text-lg font-semibold text-slate-900">
               Recent Alerts
             </h2>
 
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-slate-500">
               Important observations from patient
               activity.
             </p>
+
           </div>
 
           <button
             onClick={fetchAlerts}
-            className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
             Refresh
           </button>
+
         </div>
 
         {alerts.length === 0 ? (
+
           <div className="px-6 py-14 text-center">
+
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-2xl">
               ✓
             </div>
 
-            <h3 className="mt-4 text-lg font-semibold text-gray-900">
+            <h3 className="mt-4 text-lg font-semibold text-slate-900">
               No alerts
             </h3>
 
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-slate-500">
               There are no alerts requiring attention.
             </p>
+
           </div>
+
         ) : (
-          <div className="divide-y">
+
+          <div className="divide-y divide-slate-200">
+
             {alerts.map((alert) => {
+
               const styles =
                 getSeverityStyle(
                   alert.severity
@@ -375,76 +547,117 @@ export default function Alerts() {
               return (
                 <div
                   key={alert.id}
-                  className="px-6 py-5 hover:bg-gray-50"
+                  className={`p-6 transition hover:bg-slate-50 ${
+                    alert.resolved
+                      ? "bg-green-50/30"
+                      : ""
+                  }`}
                 >
-                  <div className="flex gap-4">
+
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+
+                    {/* ALERT ICON */}
+
                     <div
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-xl ${styles.icon}`}
+                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border text-2xl ${styles.icon}`}
                     >
                       {getAlertIcon(
                         alert.type
                       )}
                     </div>
 
+                    {/* ALERT DETAILS */}
+
                     <div className="min-w-0 flex-1">
+
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-gray-900">
+
+                        <h3 className="text-base font-semibold text-slate-900">
                           {getAlertTitle(
                             alert.type
                           )}
                         </h3>
 
                         <span
-                          className={`rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${styles.badge}`}
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${styles.badge}`}
                         >
                           {alert.severity}
                         </span>
 
                         {alert.resolved && (
-                          <span className="rounded-full border border-green-200 bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                          <span className="rounded-full border border-green-200 bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
                             Resolved
                           </span>
                         )}
+
                       </div>
 
-                      <p className="mt-2 text-sm font-medium text-gray-700">
+                      <p className="mt-2 text-sm font-semibold text-slate-700">
                         Patient:{" "}
                         {getPatientName(
                           alert.patientId
                         )}
                       </p>
 
-                      <p className="mt-2 text-sm leading-6 text-gray-600">
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
                         {alert.message}
                       </p>
 
-                      <p className="mt-3 text-xs text-gray-400">
+                      <p className="mt-3 text-xs text-slate-400">
                         {formatDate(
                           alert.createdAt
                         )}
                       </p>
+
                     </div>
 
-                    <div className="hidden shrink-0 sm:block">
-                      <span
-                        className={
-                          alert.resolved
-                            ? "text-sm font-medium text-green-600"
-                            : "text-sm font-medium text-red-600"
-                        }
-                      >
-                        {alert.resolved
-                          ? "✓ Resolved"
-                          : "Needs attention"}
-                      </span>
+                    {/* ACTION */}
+
+                    <div className="shrink-0">
+
+                      {alert.resolved ? (
+
+                        <span className="inline-flex items-center rounded-lg bg-green-100 px-4 py-2.5 text-sm font-semibold text-green-700">
+                          ✓ Resolved
+                        </span>
+
+                      ) : (
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            resolveAlert(
+                              alert.id
+                            )
+                          }
+                          disabled={
+                            resolvingId ===
+                            alert.id
+                          }
+                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resolvingId ===
+                          alert.id
+                            ? "Resolving..."
+                            : "Mark as Resolved"}
+                        </button>
+
+                      )}
+
                     </div>
+
                   </div>
+
                 </div>
               );
             })}
+
           </div>
+
         )}
+
       </div>
+
     </div>
   );
 }

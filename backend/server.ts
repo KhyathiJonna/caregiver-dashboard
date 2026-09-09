@@ -4,16 +4,20 @@ import { patients, activities } from "./data";
 
 const app = express();
 
-// Render provides PORT as a string.
-// Convert it to a number for Express.
 const PORT = Number(process.env.PORT) || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-// --------------------------------------------------
+// ==================================================
+// RESOLVED ALERTS
+// ==================================================
+
+const resolvedAlertIds = new Set<string>();
+
+// ==================================================
 // ROOT
-// --------------------------------------------------
+// ==================================================
 
 app.get("/", (_req, res) => {
   res.json({
@@ -21,17 +25,17 @@ app.get("/", (_req, res) => {
   });
 });
 
-// --------------------------------------------------
+// ==================================================
 // GET ALL PATIENTS
-// --------------------------------------------------
+// ==================================================
 
 app.get("/api/patients", (_req, res) => {
   res.json(patients);
 });
 
-// --------------------------------------------------
+// ==================================================
 // GET SINGLE PATIENT
-// --------------------------------------------------
+// ==================================================
 
 app.get("/api/patients/:id", (req, res) => {
   const patient = patients.find(
@@ -47,22 +51,25 @@ app.get("/api/patients/:id", (req, res) => {
   res.json(patient);
 });
 
-// --------------------------------------------------
+// ==================================================
 // GET PATIENT ACTIVITIES
-// --------------------------------------------------
+// ==================================================
 
-app.get("/api/patients/:id/activities", (req, res) => {
-  const patientActivities = activities.filter(
-    (activity) =>
-      activity.patientId === req.params.id
-  );
+app.get(
+  "/api/patients/:id/activities",
+  (req, res) => {
+    const patientActivities = activities.filter(
+      (activity) =>
+        activity.patientId === req.params.id
+    );
 
-  res.json(patientActivities);
-});
+    res.json(patientActivities);
+  }
+);
 
-// --------------------------------------------------
+// ==================================================
 // ADD NEW GAME ACTIVITY
-// --------------------------------------------------
+// ==================================================
 
 app.post("/api/activity", (req, res) => {
   const {
@@ -131,8 +138,8 @@ app.post("/api/activity", (req, res) => {
       );
 
     patient.trend =
-      sortedActivities[0].score >=
-      sortedActivities[1].score
+      Number(sortedActivities[0].score) >=
+      Number(sortedActivities[1].score)
         ? "up"
         : "down";
   }
@@ -143,9 +150,9 @@ app.post("/api/activity", (req, res) => {
   });
 });
 
-// --------------------------------------------------
-// AUTOMATIC ALERT GENERATION
-// --------------------------------------------------
+// ==================================================
+// GET ALERTS
+// ==================================================
 
 app.get("/api/alerts", (_req, res) => {
   const generatedAlerts: any[] = [];
@@ -158,7 +165,7 @@ app.get("/api/alerts", (_req, res) => {
       );
 
     // ----------------------------------------------
-    // PERFORMANCE DECLINE ALERT
+    // PERFORMANCE DECLINE
     // ----------------------------------------------
 
     if (patientActivities.length >= 2) {
@@ -169,11 +176,13 @@ app.get("/api/alerts", (_req, res) => {
             new Date(a.playedAt).getTime()
         );
 
-      const latestScore =
-        sortedActivities[0].score;
+      const latestScore = Number(
+        sortedActivities[0].score
+      );
 
-      const previousScore =
-        sortedActivities[1].score;
+      const previousScore = Number(
+        sortedActivities[1].score
+      );
 
       if (previousScore > 0) {
         const decline =
@@ -182,8 +191,11 @@ app.get("/api/alerts", (_req, res) => {
           100;
 
         if (decline >= 20) {
+          const alertId =
+            `PERFORMANCE-${patient.id}`;
+
           generatedAlerts.push({
-            id: `PERFORMANCE-${patient.id}`,
+            id: alertId,
             patientId: patient.id,
             type: "performance",
             severity: "high",
@@ -191,7 +203,8 @@ app.get("/api/alerts", (_req, res) => {
               `Cognitive game performance has decreased by ${Math.round(
                 decline
               )}% compared with the previous activity.`,
-            resolved: false,
+            resolved:
+              resolvedAlertIds.has(alertId),
             createdAt:
               new Date().toISOString(),
           });
@@ -200,18 +213,22 @@ app.get("/api/alerts", (_req, res) => {
     }
 
     // ----------------------------------------------
-    // INACTIVITY ALERT
+    // INACTIVITY
     // ----------------------------------------------
 
     if (patient.id === "1009") {
+      const alertId =
+        `INACTIVE-${patient.id}`;
+
       generatedAlerts.push({
-        id: `INACTIVE-${patient.id}`,
+        id: alertId,
         patientId: patient.id,
         type: "inactivity",
         severity: "medium",
         message:
           "No cognitive game activity has been recorded for the last 3 days.",
-        resolved: false,
+        resolved:
+          resolvedAlertIds.has(alertId),
         createdAt:
           new Date().toISOString(),
       });
@@ -219,17 +236,21 @@ app.get("/api/alerts", (_req, res) => {
   });
 
   // ----------------------------------------------
-  // MISSED REMINDER ALERT
+  // MISSED REMINDER
   // ----------------------------------------------
 
+  const reminderAlertId =
+    "REMINDER-1024";
+
   generatedAlerts.push({
-    id: "REMINDER-1024",
+    id: reminderAlertId,
     patientId: "1024",
     type: "reminder",
     severity: "medium",
     message:
       "The patient did not complete the scheduled medication reminder.",
-    resolved: false,
+    resolved:
+      resolvedAlertIds.has(reminderAlertId),
     createdAt:
       new Date().toISOString(),
   });
@@ -237,9 +258,108 @@ app.get("/api/alerts", (_req, res) => {
   res.json(generatedAlerts);
 });
 
-// --------------------------------------------------
+// ==================================================
+// RESOLVE ALERT
+// ==================================================
+
+app.post(
+  "/api/alerts/:id/resolve",
+  (req, res) => {
+    const alertId = req.params.id;
+
+    const validAlertIds = new Set<string>();
+
+    // ----------------------------------------------
+    // CHECK PERFORMANCE ALERTS
+    // ----------------------------------------------
+
+    patients.forEach((patient) => {
+      const patientActivities =
+        activities.filter(
+          (activity) =>
+            activity.patientId === patient.id
+        );
+
+      if (patientActivities.length >= 2) {
+        const sortedActivities =
+          [...patientActivities].sort(
+            (a, b) =>
+              new Date(
+                b.playedAt
+              ).getTime() -
+              new Date(
+                a.playedAt
+              ).getTime()
+          );
+
+        const latestScore = Number(
+          sortedActivities[0].score
+        );
+
+        const previousScore = Number(
+          sortedActivities[1].score
+        );
+
+        if (previousScore > 0) {
+          const decline =
+            ((previousScore - latestScore) /
+              previousScore) *
+            100;
+
+          if (decline >= 20) {
+            validAlertIds.add(
+              `PERFORMANCE-${patient.id}`
+            );
+          }
+        }
+      }
+
+      // --------------------------------------------
+      // INACTIVITY ALERT
+      // --------------------------------------------
+
+      if (patient.id === "1009") {
+        validAlertIds.add(
+          `INACTIVE-${patient.id}`
+        );
+      }
+    });
+
+    // ----------------------------------------------
+    // REMINDER ALERT
+    // ----------------------------------------------
+
+    validAlertIds.add(
+      "REMINDER-1024"
+    );
+
+    // ----------------------------------------------
+    // VALIDATE ALERT
+    // ----------------------------------------------
+
+    if (!validAlertIds.has(alertId)) {
+      return res.status(404).json({
+        message: "Alert not found",
+      });
+    }
+
+    // ----------------------------------------------
+    // SAVE RESOLUTION
+    // ----------------------------------------------
+
+    resolvedAlertIds.add(alertId);
+
+    res.json({
+      message: "Alert resolved successfully",
+      alertId,
+      resolved: true,
+    });
+  }
+);
+
+// ==================================================
 // START SERVER
-// --------------------------------------------------
+// ==================================================
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(
