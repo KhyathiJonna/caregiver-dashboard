@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
 import {
-  Users,
   Activity,
+  Users,
   TrendingUp,
   TrendingDown,
-  ArrowRight,
+  Clock,
+  Eye,
+  AlertTriangle,
 } from "lucide-react";
 
-// -----------------------------
-// TYPES
-// -----------------------------
+const API_URL =
+  "https://caregiver-dashboard-phyh.onrender.com";
 
 type Patient = {
   id: string;
   name: string;
   age: number;
+  language?: string;
   lastActivity: string;
   games: number;
   score: number;
@@ -22,447 +24,522 @@ type Patient = {
 };
 
 type ActivityData = {
+  id?: string;
   patientId: string;
   gameType: string;
   score: number;
-  accuracy: number;
-  duration: number;
-  difficulty: string;
+  accuracy?: number;
+  duration?: number;
+  difficulty?: string;
   playedAt: string;
 };
 
-type PatientsProps = {
-  onPatientSelect?: (patient: Patient) => void;
-};
+export default function Patients() {
+  const [patients, setPatients] = useState<
+    Patient[]
+  >([]);
 
-// -----------------------------
-// COMPONENT
-// -----------------------------
+  const [loading, setLoading] =
+    useState(true);
 
-function Patients({
-  onPatientSelect,
-}: PatientsProps) {
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
 
-  // -----------------------------
-  // FETCH PATIENTS
-  // -----------------------------
+  const [selectedPatient, setSelectedPatient] =
+    useState<Patient | null>(null);
 
-  useEffect(() => {
-    const loadPatients = async () => {
-      try {
-        setLoading(true);
-        setError("");
+  /* =====================================================
+     LOAD PATIENTS
+  ===================================================== */
 
-        // Get patients
-        const patientResponse = await fetch(
-          "http://localhost:5000/api/patients"
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/api/patients`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Patients API returned ${response.status}`
         );
+      }
 
-        if (!patientResponse.ok) {
-          throw new Error("Failed to fetch patients");
-        }
+      const patientData: Patient[] =
+        await response.json();
 
-        const patientData: Patient[] =
-          await patientResponse.json();
+      /* -----------------------------------------------
+         Load activities for every patient
+      ------------------------------------------------ */
 
-        // -----------------------------
-        // GET ACTIVITIES FOR EACH PATIENT
-        // -----------------------------
+      const patientsWithData =
+        await Promise.all(
+          patientData.map(
+            async (patient) => {
+              try {
+                const activityResponse =
+                  await fetch(
+                    `${API_URL}/api/patients/${patient.id}/activities`
+                  );
 
-        const updatedPatients = await Promise.all(
-          patientData.map(async (patient) => {
-            try {
-              const activityResponse = await fetch(
-                `http://localhost:5000/api/patients/${patient.id}/activities`
-              );
+                if (!activityResponse.ok) {
+                  return patient;
+                }
 
-              if (!activityResponse.ok) {
-                return patient;
-              }
+                const activities: ActivityData[] =
+                  await activityResponse.json();
 
-              const activities: ActivityData[] =
-                await activityResponse.json();
+                if (activities.length === 0) {
+                  return {
+                    ...patient,
+                    games: 0,
+                  };
+                }
 
-              // -----------------------------
-              // NO ACTIVITY
-              // -----------------------------
+                /* Sort newest first */
 
-              if (activities.length === 0) {
+                const sortedActivities =
+                  [...activities].sort(
+                    (a, b) =>
+                      new Date(
+                        b.playedAt
+                      ).getTime() -
+                      new Date(
+                        a.playedAt
+                      ).getTime()
+                  );
+
+                /* Average score */
+
+                const averageScore =
+                  Math.round(
+                    activities.reduce(
+                      (sum, activity) =>
+                        sum +
+                        Number(
+                          activity.score
+                        ),
+                      0
+                    ) /
+                      activities.length
+                  );
+
+                /* Trend */
+
+                let trend:
+                  | "up"
+                  | "down" =
+                  patient.trend;
+
+                if (
+                  sortedActivities.length >=
+                  2
+                ) {
+                  trend =
+                    sortedActivities[0]
+                      .score >=
+                    sortedActivities[1]
+                      .score
+                      ? "up"
+                      : "down";
+                }
+
+                /* Last activity */
+
+                const latestActivity =
+                  sortedActivities[0];
+
+                const latestDate =
+                  new Date(
+                    latestActivity.playedAt
+                  );
+
+                const now = new Date();
+
+                const isToday =
+                  latestDate.getDate() ===
+                    now.getDate() &&
+                  latestDate.getMonth() ===
+                    now.getMonth() &&
+                  latestDate.getFullYear() ===
+                    now.getFullYear();
+
+                const time =
+                  latestDate.toLocaleTimeString(
+                    "en-IN",
+                    {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }
+                  );
+
+                const date =
+                  latestDate.toLocaleDateString(
+                    "en-IN",
+                    {
+                      day: "2-digit",
+                      month: "short",
+                    }
+                  );
+
                 return {
                   ...patient,
-                  games: 0,
+                  games:
+                    activities.length,
+                  score: averageScore,
+                  trend,
+                  lastActivity: isToday
+                    ? `Today, ${time}`
+                    : `${date}, ${time}`,
                 };
+              } catch {
+                return patient;
               }
-
-              // -----------------------------
-              // SORT ACTIVITIES
-              // -----------------------------
-
-              const sortedActivities =
-                [...activities].sort(
-                  (a, b) =>
-                    new Date(b.playedAt).getTime() -
-                    new Date(a.playedAt).getTime()
-                );
-
-              // -----------------------------
-              // LATEST ACTIVITY
-              // -----------------------------
-
-              const latestActivity =
-                sortedActivities[0];
-
-              // -----------------------------
-              // AVERAGE SCORE
-              // -----------------------------
-
-              const averageScore = Math.round(
-                activities.reduce(
-                  (total, activity) =>
-                    total + activity.score,
-                  0
-                ) / activities.length
-              );
-
-              // -----------------------------
-              // CALCULATE TREND
-              // -----------------------------
-
-              let trend: "up" | "down" =
-                patient.trend;
-
-              if (activities.length >= 2) {
-                const latestScore =
-                  sortedActivities[0].score;
-
-                const previousScore =
-                  sortedActivities[1].score;
-
-                trend =
-                  latestScore >= previousScore
-                    ? "up"
-                    : "down";
-              }
-
-              // -----------------------------
-              // FORMAT LAST ACTIVITY
-              // -----------------------------
-
-              const activityDate = new Date(
-                latestActivity.playedAt
-              );
-
-              const now = new Date();
-
-              const isToday =
-                activityDate.getDate() === now.getDate() &&
-                activityDate.getMonth() === now.getMonth() &&
-                activityDate.getFullYear() ===
-                  now.getFullYear();
-
-              const formattedTime =
-                activityDate.toLocaleTimeString(
-                  "en-IN",
-                  {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }
-                );
-
-              const formattedDate =
-                activityDate.toLocaleDateString(
-                  "en-IN",
-                  {
-                    day: "2-digit",
-                    month: "short",
-                  }
-                );
-
-              const lastActivity = isToday
-                ? `Today, ${formattedTime}`
-                : `${formattedDate}, ${formattedTime}`;
-
-              // -----------------------------
-              // RETURN UPDATED PATIENT
-              // -----------------------------
-
-              return {
-                ...patient,
-
-                // Dynamic number of games
-                games: activities.length,
-
-                // Average score from activities
-                score: averageScore,
-
-                // Dynamic performance trend
-                trend,
-
-                // Latest activity
-                lastActivity,
-              };
-            } catch {
-              // If activity request fails,
-              // keep original patient data
-              return patient;
             }
-          })
+          )
         );
 
-        setPatients(updatedPatients);
-        setLoading(false);
-      } catch {
-        setError(
-          "Unable to connect to the backend."
-        );
-        setLoading(false);
-      }
-    };
+      setPatients(
+        patientsWithData
+      );
+    } catch (err) {
+      console.error(
+        "Unable to connect to backend:",
+        err
+      );
 
+      setError(
+        "Unable to connect to the backend."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* =====================================================
+     LOAD ON PAGE OPEN
+  ===================================================== */
+
+  useEffect(() => {
     loadPatients();
+
+    const interval =
+      setInterval(
+        loadPatients,
+        10000
+      );
+
+    return () =>
+      clearInterval(interval);
   }, []);
 
-  // -----------------------------
-  // STATISTICS
-  // -----------------------------
+  /* =====================================================
+     STATISTICS
+  ===================================================== */
 
-  const totalPatients = patients.length;
+  const totalPatients =
+    patients.length;
 
-  const activeToday = patients.filter(
-    (patient) =>
+  const activeToday =
+    patients.filter((patient) =>
       patient.lastActivity
         .toLowerCase()
         .startsWith("today")
-  ).length;
+    ).length;
 
   const averageScore =
     patients.length > 0
       ? Math.round(
           patients.reduce(
-            (total, patient) =>
-              total + patient.score,
+            (sum, patient) =>
+              sum + Number(
+                patient.score
+              ),
             0
           ) / patients.length
         )
       : 0;
 
-  // -----------------------------
-  // UI
-  // -----------------------------
+  /* =====================================================
+     LOADING
+  ===================================================== */
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex min-h-[500px] items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+
+            <p className="mt-4 text-sm text-slate-500">
+              Loading patients...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =====================================================
+     ERROR
+  ===================================================== */
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              size={22}
+              className="text-red-600"
+            />
+
+            <div>
+              <h2 className="text-lg font-semibold text-red-700">
+                Backend Connection Error
+              </h2>
+
+              <p className="mt-2 text-sm text-red-600">
+                {error}
+              </p>
+
+              <p className="mt-3 text-xs text-slate-600">
+                Backend:
+              </p>
+
+              <p className="mt-1 break-all text-xs font-medium text-slate-800">
+                {API_URL}
+              </p>
+
+              <button
+                onClick={loadPatients}
+                className="mt-5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =====================================================
+     MAIN PAGE
+  ===================================================== */
 
   return (
-    <div className="p-6">
-      {/* PAGE HEADER */}
+    <div className="space-y-6 p-4 sm:p-6">
+      {/* =================================================
+          HEADER
+      ================================================= */}
 
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">
           Patients
-        </h2>
+        </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          View and monitor your patients' cognitive activity.
+          View and monitor your patients'
+          cognitive activity.
         </p>
       </div>
 
-      {/* STATISTICS */}
+      {/* =================================================
+          STAT CARDS
+      ================================================= */}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-        {/* TOTAL PATIENTS */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {/* Total Patients */}
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Total Patients
-            </p>
+            <div>
+              <p className="text-sm text-slate-500">
+                Total Patients
+              </p>
 
-            <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {totalPatients}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Patients connected to dashboard
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-blue-50 p-3 text-blue-600">
               <Users size={22} />
             </div>
           </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {loading ? "..." : totalPatients}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Patients connected to dashboard
-          </p>
         </div>
 
-        {/* ACTIVE TODAY */}
+        {/* Active Today */}
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Active Today
-            </p>
+            <div>
+              <p className="text-sm text-slate-500">
+                Active Today
+              </p>
 
-            <div className="rounded-lg bg-green-50 p-2 text-green-600">
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {activeToday}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Patients used the app today
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-green-50 p-3 text-green-600">
               <Activity size={22} />
             </div>
           </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {loading ? "..." : activeToday}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Patients used the app today
-          </p>
         </div>
 
-        {/* AVERAGE SCORE */}
+        {/* Average Score */}
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Average Score
-            </p>
+            <div>
+              <p className="text-sm text-slate-500">
+                Average Score
+              </p>
 
-            <div className="rounded-lg bg-purple-50 p-2 text-purple-600">
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {averageScore}%
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Overall cognitive game score
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-purple-50 p-3 text-purple-600">
               <TrendingUp size={22} />
             </div>
           </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">
-            {loading ? "..." : `${averageScore}%`}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Overall cognitive game score
-          </p>
         </div>
       </div>
 
-      {/* PATIENT TABLE */}
+      {/* =================================================
+          PATIENT LIST
+      ================================================= */}
 
-      <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-
-        {/* TABLE HEADER */}
-
-        <div className="border-b border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-900">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">
             Patient List
-          </h3>
+          </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Click on a patient to view detailed performance.
+            Click on a patient to view detailed
+            performance.
           </p>
         </div>
 
-        {/* LOADING */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-5 py-3">
+                  Patient
+                </th>
 
-        {loading && (
-          <div className="p-8 text-center text-sm text-slate-500">
-            Loading patients...
-          </div>
-        )}
+                <th className="px-5 py-3">
+                  Age
+                </th>
 
-        {/* ERROR */}
+                <th className="px-5 py-3">
+                  Language
+                </th>
 
-        {error && (
-          <div className="p-8 text-center text-sm text-red-600">
-            {error}
+                <th className="px-5 py-3">
+                  Last Activity
+                </th>
 
-            <p className="mt-2 text-xs text-slate-500">
-              Make sure the backend server is running on port 5000.
-            </p>
-          </div>
-        )}
+                <th className="px-5 py-3">
+                  Games
+                </th>
 
-        {/* TABLE */}
+                <th className="px-5 py-3">
+                  Score
+                </th>
 
-        {!loading && !error && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+                <th className="px-5 py-3">
+                  Trend
+                </th>
 
-              {/* HEADER */}
+                <th className="px-5 py-3">
+                  Action
+                </th>
+              </tr>
+            </thead>
 
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-5 py-3">
-                    Patient
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Age
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Last Activity
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Games
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Score
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Trend
-                  </th>
-
-                  <th className="px-5 py-3">
-                    Details
-                  </th>
-                </tr>
-              </thead>
-
-              {/* BODY */}
-
-              <tbody className="divide-y divide-slate-100">
-
-                {patients.map((patient) => (
+            <tbody className="divide-y divide-slate-100">
+              {patients.map(
+                (patient) => (
                   <tr
                     key={patient.id}
-                    onClick={() =>
-                      onPatientSelect?.(patient)
-                    }
-                    className="cursor-pointer transition hover:bg-blue-50"
+                    className="transition hover:bg-slate-50"
                   >
-
-                    {/* PATIENT */}
+                    {/* Patient */}
 
                     <td className="px-5 py-4">
-                      <div className="font-medium text-slate-900">
+                      <p className="font-medium text-slate-900">
                         {patient.name}
-                      </div>
+                      </p>
 
-                      <div className="text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-slate-400">
                         ID: {patient.id}
-                      </div>
+                      </p>
                     </td>
 
-                    {/* AGE */}
+                    {/* Age */}
 
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 text-slate-600">
                       {patient.age}
                     </td>
 
-                    {/* LAST ACTIVITY */}
+                    {/* Language */}
 
-                    <td className="px-5 py-4 text-slate-500">
-                      {patient.lastActivity}
+                    <td className="px-5 py-4 text-slate-600">
+                      {patient.language ||
+                        "—"}
                     </td>
 
-                    {/* GAMES */}
+                    {/* Last Activity */}
 
                     <td className="px-5 py-4">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Clock
+                          size={15}
+                        />
+
+                        <span>
+                          {
+                            patient.lastActivity
+                          }
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Games */}
+
+                    <td className="px-5 py-4 font-medium text-slate-700">
                       {patient.games}
                     </td>
 
-                    {/* SCORE */}
+                    {/* Score */}
 
                     <td className="px-5 py-4">
                       <span
                         className={`font-semibold ${
-                          patient.score >= 75
+                          patient.score >=
+                          75
                             ? "text-green-600"
                             : "text-red-600"
                         }`}
@@ -471,55 +548,117 @@ function Patients({
                       </span>
                     </td>
 
-                    {/* TREND */}
+                    {/* Trend */}
 
                     <td className="px-5 py-4">
-                      {patient.trend === "up" ? (
+                      {patient.trend ===
+                      "up" ? (
                         <div className="flex items-center gap-1 text-green-600">
-                          <TrendingUp size={18} />
+                          <TrendingUp
+                            size={17}
+                          />
 
-                          <span className="text-xs">
+                          <span className="text-xs font-medium">
                             Improving
                           </span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1 text-red-600">
-                          <TrendingDown size={18} />
+                          <TrendingDown
+                            size={17}
+                          />
 
-                          <span className="text-xs">
+                          <span className="text-xs font-medium">
                             Declining
                           </span>
                         </div>
                       )}
                     </td>
 
-                    {/* DETAILS */}
+                    {/* Action */}
 
                     <td className="px-5 py-4">
                       <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-
-                          onPatientSelect?.(patient);
-                        }}
-                        className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+                        onClick={() =>
+                          setSelectedPatient(
+                            patient
+                          )
+                        }
+                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
                       >
-                        View
+                        <Eye
+                          size={15}
+                        />
 
-                        <ArrowRight size={14} />
+                        View
                       </button>
                     </td>
-
                   </tr>
-                ))}
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
 
-              </tbody>
-            </table>
+        {/* Empty state */}
+
+        {patients.length === 0 && (
+          <div className="px-6 py-12 text-center">
+            <Users
+              size={40}
+              className="mx-auto text-slate-300"
+            />
+
+            <p className="mt-3 font-medium text-slate-700">
+              No patients found
+            </p>
+
+            <p className="mt-1 text-sm text-slate-500">
+              No patient records are currently available.
+            </p>
           </div>
         )}
       </div>
+
+      {/* =================================================
+          SELECTED PATIENT PREVIEW
+      ================================================= */}
+
+      {selectedPatient && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
+                Selected Patient
+              </p>
+
+              <h3 className="mt-1 text-lg font-semibold text-blue-900">
+                {selectedPatient.name}
+              </h3>
+
+              <p className="mt-1 text-sm text-blue-700">
+                ID: {selectedPatient.id}
+                {" • "}
+                Age: {selectedPatient.age}
+                {" • "}
+                Score:{" "}
+                {selectedPatient.score}%
+              </p>
+            </div>
+
+            <button
+              onClick={() =>
+                setSelectedPatient(
+                  null
+                )
+              }
+              className="w-fit rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default Patients;
